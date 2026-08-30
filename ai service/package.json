@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
+  "scripts": {
+    "index": "node index.js",
+    "query": "node query.js",
+    "delete": "node deleteAll.js"
+  },
   "dependencies": {
     "@google/genai": "^1.46.0",
     "@langchain/community": "^1.1.24",
