@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DocMind — AI Document Assistant</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <!-- Markdown renderer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+  <!-- KaTeX — LaTeX math renderer -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -293,11 +299,94 @@
       border-radius: 4px;
       padding: 1px 6px; font-size: 10px; font-weight: 500;
     }
+    /* User messages keep pre-wrap; bot markdown messages do not */
     .msg-text {
       font-size: 14px; line-height: 1.75; color: var(--text);
-      white-space: pre-wrap; word-break: break-word;
+      word-break: break-word;
     }
-    .msg-text strong { color: var(--accent-lt); font-weight: 600; }
+    .msg.user .msg-text { white-space: pre-wrap; }
+
+    /* ── Markdown rendered content (bot messages) ─────────────────────── */
+    .msg-text strong, .msg-text b { color: var(--accent-lt); font-weight: 600; }
+    .msg-text em, .msg-text i { color: var(--sub); font-style: italic; }
+    .msg-text h1, .msg-text h2, .msg-text h3,
+    .msg-text h4, .msg-text h5, .msg-text h6 {
+      color: var(--text); font-weight: 700;
+      margin: 14px 0 6px;
+      line-height: 1.3;
+    }
+    .msg-text h1 { font-size: 18px; }
+    .msg-text h2 { font-size: 16px; }
+    .msg-text h3 { font-size: 15px; color: var(--accent-lt); }
+    .msg-text p  { margin: 6px 0; }
+    .msg-text ul, .msg-text ol {
+      margin: 6px 0 6px 20px;
+      padding: 0;
+    }
+    .msg-text li { margin: 3px 0; }
+    .msg-text hr {
+      border: none;
+      border-top: 1px solid var(--border2);
+      margin: 12px 0;
+    }
+    /* Inline code */
+    .msg-text code {
+      background: rgba(124,109,240,.12);
+      color: var(--accent-lt);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 13px;
+      font-family: 'Fira Mono', 'Consolas', monospace;
+    }
+    /* Code blocks */
+    .msg-text pre {
+      background: var(--card);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    .msg-text pre code {
+      background: none;
+      color: var(--text);
+      padding: 0;
+      font-size: 13px;
+    }
+    /* Tables */
+    .msg-text table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+    .msg-text th {
+      background: rgba(124,109,240,.12);
+      color: var(--accent-lt);
+      font-weight: 600;
+      text-align: left;
+      padding: 7px 12px;
+      border: 1px solid var(--border2);
+    }
+    .msg-text td {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      color: var(--text);
+      vertical-align: top;
+    }
+    .msg-text tr:nth-child(even) td { background: rgba(255,255,255,.025); }
+    /* Blockquote */
+    .msg-text blockquote {
+      border-left: 3px solid var(--accent);
+      padding: 6px 14px;
+      margin: 8px 0;
+      color: var(--sub);
+      background: rgba(124,109,240,.05);
+      border-radius: 0 6px 6px 0;
+    }
+    /* KaTeX math */
+    .msg-text .katex { font-size: 1em; color: var(--text); }
+    .msg-text .katex-display { overflow-x: auto; margin: 8px 0; }
 
     .sources-wrap { margin-top: 12px; }
     .sources-head {
@@ -549,11 +638,16 @@
 
       progressT.textContent = 'Indexing document (this may take a minute)…';
 
-      // Poll for completion
+      // Poll for completion with a timeout guard.
+      // If indexing hasn't finished after ~5 minutes, surface an error.
+      let pollCount = 0;
+      const MAX_POLLS = 150; // 150 × 2s = 300s = 5 minutes
       const poll = setInterval(async () => {
+        pollCount++;
         try {
           const sr = await fetch('/api/status');
           const st = await sr.json();
+
           if (st.indexed) {
             clearInterval(poll);
             progressF.classList.add('done');
@@ -570,8 +664,27 @@
             scroll();
 
             setTimeout(() => { progressW.classList.remove('show'); }, 3000);
+
+          } else if (!st.indexing && pollCount > 3) {
+            // Server finished (indexing=false) but indexed is still false —
+            // this means indexing failed on the backend.
+            clearInterval(poll);
+            progressT.textContent = 'Indexing failed — check server logs';
+            progressI.textContent = '❌';
+            topDot.className = 'dot-none';
+            topBadge.textContent = 'Indexing failed';
+            setTimeout(() => { progressW.classList.remove('show'); }, 4000);
+
+          } else if (pollCount >= MAX_POLLS) {
+            // Timeout: indexing is taking way too long.
+            clearInterval(poll);
+            progressT.textContent = 'Indexing timed out — please try again';
+            progressI.textContent = '❌';
+            topDot.className = 'dot-none';
+            topBadge.textContent = 'No document loaded';
+            setTimeout(() => { progressW.classList.remove('show'); }, 4000);
           }
-        } catch {}
+        } catch { /* network hiccup, will retry next tick */ }
       }, 2000);
     } catch {
       progressT.textContent = 'Upload failed';
@@ -620,7 +733,12 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
   btn.addEventListener('click', send);
-  function ask(el) { input.value = el.textContent.trim(); send(); }
+  function ask(el) {
+    // Only fire if the chat is active (document indexed and not busy)
+    if (input.disabled) return;
+    input.value = el.textContent.trim();
+    send();
+  }
 
   function removeEmpty() { const el = document.getElementById('empty'); if (el) el.remove(); }
 
@@ -657,9 +775,21 @@
   function addBot(answer, sources) {
     const d = document.createElement('div');
     d.className = 'msg';
-    const fmt = esc(answer)
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\n/g, '<br>');
+
+    // ── Render full GitHub-Flavored Markdown ──────────────────────────────
+    // marked.parse() is used instead of the old manual regex so that headings,
+    // tables, lists, code blocks, horizontal rules etc. all render correctly.
+    // marked escapes raw HTML by default (no XSS risk).
+    let htmlContent = '';
+    if (typeof marked !== 'undefined') {
+      marked.use({ gfm: true, breaks: true });
+      htmlContent = marked.parse(answer);
+    } else {
+      // Fallback if CDN fails: escape + basic formatting
+      htmlContent = esc(answer)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+    }
 
     let srcHtml = '';
     if (sources?.length) {
@@ -675,14 +805,31 @@
         </div>
       </div>`;
     }
+
     d.innerHTML = `
       <div class="av bot-av">✦</div>
       <div class="msg-body">
         <div class="msg-name">DocMind <span class="tag">AI</span></div>
-        <div class="msg-text">${fmt}</div>
+        <div class="msg-text">${htmlContent}</div>
         ${srcHtml}
       </div>`;
     msgs.appendChild(d);
+
+    // ── Render LaTeX math with KaTeX (runs after DOM is updated) ─────────
+    // Handles: $inline$, $$block$$, \(inline\), \[block\]
+    const textEl = d.querySelector('.msg-text');
+    if (typeof renderMathInElement !== 'undefined' && textEl) {
+      renderMathInElement(textEl, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true  },
+          { left: '$',  right: '$',  display: false },
+          { left: '\\(', right: '\\)', display: false },
+          { left: '\\[', right: '\\]', display: true  },
+        ],
+        throwOnError: false,
+      });
+    }
+
     scroll();
   }
 

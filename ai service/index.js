@@ -1,6 +1,19 @@
+// ── Promise.withResolvers polyfill (required for pdfjs-dist on Node < v22) ──
+if (typeof Promise.withResolvers === 'undefined') {
+  Promise.withResolvers = function () {
+    let resolve, reject;
+    const promise = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+import { existsSync } from 'fs';
 import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { OpenAIEmbeddings } from '@langchain/openai';
@@ -25,6 +38,14 @@ async function indexDocument() {
   try {
     // 1. Load PDF
     const PDF_PATH = './result.pdf';
+
+    // Guard: verify the PDF exists before trying to load it
+    if (!existsSync(PDF_PATH)) {
+      console.error(`❌  PDF file not found at path: ${PDF_PATH}`);
+      console.error('    Place a valid PDF file named "result.pdf" in the "ai service" directory.');
+      process.exit(1);
+    }
+
     const pdfLoader = new PDFLoader(PDF_PATH);
     const rawDocs = await pdfLoader.load();
     console.log(`✅  PDF loaded  (${rawDocs.length} pages)`);

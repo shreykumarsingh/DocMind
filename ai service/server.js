@@ -1,3 +1,15 @@
+// ── Promise.withResolvers polyfill (required for pdfjs-dist on Node < v22) ──
+if (typeof Promise.withResolvers === 'undefined') {
+  Promise.withResolvers = function () {
+    let resolve, reject;
+    const promise = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
 import * as dotenv from 'dotenv';
 dotenv.config();
 
@@ -6,7 +18,7 @@ import cors from 'cors';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { OpenAIEmbeddings } from '@langchain/openai';
@@ -49,7 +61,10 @@ const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const pineconeIndex = pinecone.Index(process.env.PINECONE_INDEX_NAME);
 
 // ── State ────────────────────────────────────────────────────────────────────
+// sessions stores CLEAN conversation history (no context blobs).
+// Structure: { [sessionId]: { messages: [...], systemPrompt: string } }
 const sessions = {};
+
 let docState = {
   filename: null,
   pages: 0,
@@ -58,7 +73,7 @@ let docState = {
   indexing: false,
 };
 
-// Check if there's already data in Pinecone from a previous run
+// ── Check if there's already data in Pinecone from a previous run ───────────
 (async () => {
   try {
     const stats = await pineconeIndex.describeIndexStats();
@@ -66,12 +81,29 @@ let docState = {
     if (totalVectors > 0) {
       docState.indexed = true;
       docState.chunks = totalVectors;
-      docState.filename = 'result.pdf';
-      docState.pages = 22;
+      // filename and pages are unknown from a previous session — leave as null/0
+      // The UI will still show "indexed" status correctly with chunk count.
+      docState.filename = 'Previous document';
+      docState.pages = 0;
       console.log(`📄  Found ${totalVectors} existing vectors in Pinecone`);
     }
-  } catch { /* ignore */ }
+  } catch { /* ignore connection errors on startup */ }
 })();
+
+// ── Helper: safely delete all vectors (handles 404 on empty index) ───────────
+// PineconeNotFoundError is thrown when deleteAll() is called on an empty
+// serverless index. Its .status property is undefined (not the number 404),
+// so we must check .name rather than .status to identify and suppress it.
+async function safeDeleteAll() {
+  try {
+    await pineconeIndex.deleteAll();
+  } catch (err) {
+    // Swallow "not found" — means the index is already empty, which is fine.
+    if (err.name === 'PineconeNotFoundError') return;
+    // For any other error, re-throw so callers can handle it.
+    throw err;
+  }
+}
 
 // ── Upload & Index endpoint ──────────────────────────────────────────────────
 app.post('/api/upload', upload.single('pdf'), async (req, res) => {
@@ -105,8 +137,8 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
     docState.chunks = chunks.length;
     console.log(`✅  Chunked into ${chunks.length} pieces`);
 
-    // 3. Clear old vectors
-    try { await pineconeIndex.deleteAll(); } catch { /* OK if empty */ }
+    // 3. Clear old vectors safely (handles empty index gracefully)
+    await safeDeleteAll();
     console.log('✅  Cleared old vectors');
 
     // 4. Embed & store
@@ -124,6 +156,7 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
     console.log(`🎉  "${originalName}" indexed successfully!`);
   } catch (err) {
     docState.indexing = false;
+    docState.indexed = false;
     console.error('❌  Indexing failed:', err.message);
   }
 
@@ -138,7 +171,7 @@ app.get('/api/status', (_, res) => res.json(docState));
 app.post('/api/clear', async (_, res) => {
   if (docState.indexing) return res.status(409).json({ error: 'Indexing in progress, please wait' });
   try {
-    await pineconeIndex.deleteAll();
+    await safeDeleteAll();
     Object.keys(sessions).forEach(k => delete sessions[k]);
     docState = { filename: null, pages: 0, chunks: 0, indexed: false, indexing: false };
     console.log('🗑️  Document cleared');
@@ -155,19 +188,21 @@ app.post('/api/chat', async (req, res) => {
   if (!question?.trim()) return res.status(400).json({ error: 'No question provided' });
   if (!docState.indexed) return res.status(400).json({ error: 'No document indexed yet. Please upload a PDF first.' });
 
+  // Initialise a clean session — only the system prompt is stored here.
+  // We do NOT store context blobs in history to avoid context window pollution.
   if (!sessions[sessionId]) {
-    sessions[sessionId] = [
-      {
-        role: 'system',
-        content: `You are a helpful assistant.
+    sessions[sessionId] = {
+      systemPrompt: `You are a helpful assistant.
 Answer the user's question based ONLY on the provided context.
 If the answer is not in the context, say "I could not find the answer in the provided document."
 Keep your answers clear, concise, and educational.`,
-      },
-    ];
+      // Clean Q&A pairs: [{ question: string, answer: string }, ...]
+      turns: [],
+    };
   }
 
   try {
+    // 1. Embed the question and retrieve context
     const queryVector = await embeddings.embedQuery(question);
     const searchResults = await pineconeIndex.query({
       topK: 8,
@@ -182,19 +217,36 @@ Keep your answers clear, concise, and educational.`,
 
     const context = sources.map((s) => s.text).join('\n\n---\n\n');
 
-    sessions[sessionId].push({
-      role: 'user',
-      content: `Context:\n${context}\n\nQuestion: ${question}`,
-    });
+    // 2. Build the messages array fresh each turn.
+    //    - System prompt first.
+    //    - Previous clean Q&A turns (no context blobs — saves tokens).
+    //    - Current turn's user message WITH context injected.
+    const session = sessions[sessionId];
+    const messages = [
+      { role: 'system', content: session.systemPrompt },
+      // Replay previous turns as clean Q&A so the model remembers the conversation
+      ...session.turns.flatMap(turn => [
+        { role: 'user', content: turn.question },
+        { role: 'assistant', content: turn.answer },
+      ]),
+      // Current turn: inject fresh context only for this question
+      {
+        role: 'user',
+        content: `Context:\n${context}\n\nQuestion: ${question}`,
+      },
+    ];
 
+    // 3. Call LLM
     const response = await openai.chat.completions.create({
       model: 'nvidia/nemotron-3-ultra-550b-a55b:free',
       max_tokens: 1024,
-      messages: sessions[sessionId],
+      messages,
     });
 
     const answer = response.choices[0].message.content;
-    sessions[sessionId].push({ role: 'assistant', content: answer });
+
+    // 4. Save the clean Q&A pair (NOT the context blob) to history
+    session.turns.push({ question, answer });
 
     res.json({ answer, sources: sources.slice(0, 3) });
   } catch (err) {
@@ -206,7 +258,17 @@ Keep your answers clear, concise, and educational.`,
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ status: 'ok', index: process.env.PINECONE_INDEX_NAME }));
 
-const PORT = 3000;
+// ── Global error handler ───────────────────────────────────────────────────
+// Express 5 bubbles middleware errors (e.g. Multer fileFilter rejections)
+// to this 4-argument error handler. Without it they render as raw HTML stacks.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('❌  Unhandled error:', err.message);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({ error: err.message || 'Internal server error' });
+});
+
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`\n🚀  DocMind running at → http://localhost:${PORT}\n`);
 });

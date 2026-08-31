@@ -25,17 +25,11 @@ const openai = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
 });
 
-// ── Conversation history ────────────────────────────────────────────────────
-const History = [
-  {
-    role: 'system',
-    content: `You are a helpful assistant.
+const SYSTEM_PROMPT = `You are a helpful assistant.
 You will be given a context of relevant information and a user question.
 Your task is to answer the user's question based ONLY on the provided context.
 If the answer is not in the context, say "I could not find the answer in the provided document."
-Keep your answers clear, concise, and educational.`,
-  },
-];
+Keep your answers clear, concise, and educational.`;
 
 // ── Embedding + Pinecone client (created once, reused each query) ──────────
 const embeddings = new OpenAIEmbeddings({
@@ -48,6 +42,11 @@ const embeddings = new OpenAIEmbeddings({
 
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const pineconeIndex = pinecone.Index(process.env.PINECONE_INDEX_NAME);
+
+// ── Clean conversation history ───────────────────────────────────────────────
+// We store only clean Q&A pairs (no context blobs) to prevent context
+// window pollution. The context is injected fresh for each new question.
+const conversationTurns = []; // [{ question: string, answer: string }]
 
 // ── Core RAG function ───────────────────────────────────────────────────────
 async function chatting(question) {
@@ -66,26 +65,35 @@ async function chatting(question) {
       .map((match) => match.metadata.text)
       .join('\n\n---\n\n');
 
-    // 3. Add user message with context injected
-    History.push({
-      role: 'user',
-      content: `Context:\n${context}\n\nQuestion: ${question}`,
-    });
+    // 3. Build the messages array fresh each turn.
+    //    - System prompt first.
+    //    - Previous clean Q&A turns (no context blobs — saves tokens).
+    //    - Current turn's user message WITH context injected.
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      // Replay previous turns as clean Q&A
+      ...conversationTurns.flatMap(turn => [
+        { role: 'user', content: turn.question },
+        { role: 'assistant', content: turn.answer },
+      ]),
+      // Current turn: inject fresh context only for this question
+      {
+        role: 'user',
+        content: `Context:\n${context}\n\nQuestion: ${question}`,
+      },
+    ];
 
     // 4. Call LLM
     const response = await openai.chat.completions.create({
       model: 'nvidia/nemotron-3-ultra-550b-a55b:free',
       max_tokens: 1024,
-      messages: History,
+      messages,
     });
 
     const responseText = response.choices[0].message.content;
 
-    // 5. Save assistant reply to history
-    History.push({
-      role: 'assistant',
-      content: responseText,
-    });
+    // 5. Save the clean Q&A pair to history (NOT the context blob)
+    conversationTurns.push({ question, answer: responseText });
 
     console.log('\n🤖  ' + responseText + '\n');
   } catch (err) {
