@@ -203,6 +203,27 @@
       background: rgba(124,109,240,.06);
     }
 
+    /* Remove button */
+    .remove-btn {
+      margin: 6px 12px 0;
+      background: none;
+      border: 1px solid rgba(248,113,113,.25);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px; font-weight: 500;
+      color: var(--red);
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: all .15s;
+      display: none;
+      text-align: center;
+    }
+    .remove-btn:hover {
+      background: rgba(248,113,113,.08);
+      border-color: var(--red);
+    }
+    .remove-btn.show { display: block; }
+
     /* ─── Chat pane ─── */
     .chat-pane {
       flex: 1;
@@ -414,6 +435,7 @@
       <div class="sb-stat"><span class="sb-stat-key">Pages</span><span class="sb-stat-val" id="statPages">—</span></div>
       <div class="sb-stat"><span class="sb-stat-key">Chunks</span><span class="sb-stat-val accent" id="statChunks">—</span></div>
     </div>
+    <button class="remove-btn" id="removeBtn" onclick="removeDoc()">✕ Remove document</button>
     <div class="sb-divider" id="docDivider" style="display:none;"></div>
 
     <div class="sb-section">
@@ -572,6 +594,7 @@
     document.getElementById('statFile').textContent = st.filename || '—';
     document.getElementById('statPages').textContent = st.pages || '—';
     document.getElementById('statChunks').textContent = st.chunks || '—';
+    document.getElementById('removeBtn').classList.add('show');
 
     // Update empty state text if still visible
     const emptyEl = document.getElementById('empty');
@@ -706,6 +729,43 @@
   function scroll() { msgs.scrollTop = msgs.scrollHeight; }
   function esc(s) {
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  async function removeDoc() {
+    if (!confirm('Remove the current document? This will clear all indexed data and chat history.')) return;
+    const removeBtn = document.getElementById('removeBtn');
+    removeBtn.textContent = 'Removing…';
+    removeBtn.disabled = true;
+    try {
+      const r = await fetch('/api/clear', { method: 'POST' });
+      const d = await r.json();
+      if (d.error) { alert(d.error); removeBtn.textContent = '✕ Remove document'; removeBtn.disabled = false; return; }
+
+      // Reset UI
+      removeBtn.classList.remove('show');
+      removeBtn.textContent = '✕ Remove document';
+      removeBtn.disabled = false;
+      document.getElementById('docInfoSection').style.display = 'none';
+      document.getElementById('docDivider').style.display = 'none';
+      topDot.className = 'dot-none';
+      topBadge.textContent = 'No document loaded';
+      input.disabled = true;
+      btn.disabled = true;
+      input.placeholder = 'Upload a PDF first…';
+      inputWrap.classList.add('disabled');
+
+      // Clear chat and show empty state
+      msgs.innerHTML = `
+        <div class="empty-state" id="empty">
+          <div class="empty-icon">✦</div>
+          <h2>Upload a PDF to get started</h2>
+          <p>Drop any PDF in the sidebar and start asking questions. Your document will be indexed automatically.</p>
+        </div>`;
+    } catch {
+      alert('Failed to remove document.');
+      removeBtn.textContent = '✕ Remove document';
+      removeBtn.disabled = false;
+    }
   }
 </script>
 </body>

@@ -134,6 +134,21 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
 // ── Document status ──────────────────────────────────────────────────────────
 app.get('/api/status', (_, res) => res.json(docState));
 
+// ── Clear document ───────────────────────────────────────────────────────────
+app.post('/api/clear', async (_, res) => {
+  if (docState.indexing) return res.status(409).json({ error: 'Indexing in progress, please wait' });
+  try {
+    await pineconeIndex.deleteAll();
+    Object.keys(sessions).forEach(k => delete sessions[k]);
+    docState = { filename: null, pages: 0, chunks: 0, indexed: false, indexing: false };
+    console.log('🗑️  Document cleared');
+    res.json({ status: 'cleared' });
+  } catch (err) {
+    console.error('❌  Clear failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Chat endpoint ────────────────────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
   const { question, sessionId } = req.body;
