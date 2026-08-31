@@ -3,6 +3,9 @@ node_modules/
 .pnp
 .pnp.js
 
+# Uploaded PDFs (temp)
+uploads/
+
 # Environment variables (keep secrets out of git)
 .env
 .env.local

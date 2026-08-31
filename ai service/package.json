@@ -4,6 +4,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "start": "node server.js",
     "index": "node index.js",
     "query": "node query.js",
     "delete": "node deleteAll.js"
@@ -17,8 +18,11 @@
     "@langchain/pinecone": "^1.0.1",
     "@langchain/textsplitters": "^1.0.1",
     "@pinecone-database/pinecone": "^5.1.2",
+    "cors": "^2.8.6",
     "dotenv": "16.6.1",
+    "express": "^5.2.1",
     "langchain": "^1.2.35",
+    "multer": "^2.3.0",
     "openai": "^6.32.0",
     "pdf-parse": "1.1.1",
     "pdfjs-dist": "^4.4.168",

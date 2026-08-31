@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocMind — AI Document Assistant</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0b0f;
+      --surface:   #111318;
+      --card:      #16181f;
+      --border:    #1f2230;
+      --border2:   #2a2d3e;
+      --accent:    #7c6df0;
+      --accent-lt: #a89cf7;
+      --green:     #34d399;
+      --amber:     #fbbf24;
+      --red:       #f87171;
+      --text:      #e4e6f0;
+      --sub:       #8b90ad;
+      --muted:     #555a78;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ─── Topbar ─── */
+    .topbar {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 15px; font-weight: 700; color: var(--text);
+      text-decoration: none;
+    }
+    .brand-icon {
+      width: 30px; height: 30px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-lt));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px;
+    }
+    .topbar-sep { flex: 1; }
+    .doc-badge {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--sub);
+      background: var(--card);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 5px 10px;
+    }
+    .dot-live {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+    }
+    .dot-none { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+    .dot-indexing {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--amber);
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ─── Layout ─── */
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* ─── Sidebar ─── */
+    .sidebar {
+      width: 260px;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      flex-shrink: 0;
+      padding: 12px 0;
+    }
+    .sidebar::-webkit-scrollbar { width: 3px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    .sb-section { padding: 8px 16px 4px; }
+    .sb-label {
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 1.2px;
+      color: var(--muted); margin-bottom: 8px;
+    }
+    .sb-stat {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 0; font-size: 12px;
+    }
+    .sb-stat-key { color: var(--sub); }
+    .sb-stat-val { color: var(--text); font-weight: 500; }
+    .sb-stat-val.accent { color: var(--accent-lt); }
+    .sb-divider { height: 1px; background: var(--border); margin: 8px 16px; }
+
+    /* ─── Upload zone ─── */
+    .upload-zone {
+      margin: 4px 12px;
+      border: 2px dashed var(--border2);
+      border-radius: 12px;
+      padding: 20px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: all .2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(124,109,240,.06);
+    }
+    .upload-zone.dragover { transform: scale(1.01); }
+    .upload-icon { font-size: 28px; margin-bottom: 8px; }
+    .upload-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .upload-sub { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .upload-zone input { display: none; }
+
+    /* Progress bar */
+    .progress-wrap {
+      margin: 8px 12px 0;
+      display: none;
+    }
+    .progress-wrap.show { display: block; }
+    .progress-label {
+      font-size: 11px; color: var(--amber); font-weight: 500;
+      display: flex; align-items: center; gap: 6px;
+      margin-bottom: 6px;
+    }
+    .progress-bar {
+      height: 4px; background: var(--card); border-radius: 4px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-lt));
+      border-radius: 4px;
+      width: 0%;
+      transition: width .4s;
+      animation: indeterminate 1.5s infinite;
+    }
+    @keyframes indeterminate {
+      0%   { margin-left: 0%; width: 30%; }
+      50%  { margin-left: 40%; width: 40%; }
+      100% { margin-left: 100%; width: 30%; }
+    }
+    .progress-fill.done { animation: none; width: 100%; background: var(--green); }
+
+    /* Pipeline flow */
+    .flow-steps { padding: 4px 0; }
+    .flow-step {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 16px; position: relative;
+    }
+    .flow-step::after {
+      content: '';
+      position: absolute;
+      left: 24px; top: 32px;
+      width: 1px; height: calc(100% - 8px);
+      background: var(--border2);
+    }
+    .flow-step:last-child::after { display: none; }
+    .step-num {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--card); border: 1px solid var(--border2);
+      font-size: 10px; font-weight: 600; color: var(--accent-lt);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .step-info { font-size: 12px; }
+    .step-info strong { color: var(--text); font-weight: 500; display: block; line-height: 1.3; }
+    .step-info span { color: var(--muted); font-size: 11px; }
+
+    .prompts { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
+    .prompt-btn {
+      margin: 0 12px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 12px; color: var(--sub); font-family: 'Inter', sans-serif;
+      text-align: left; cursor: pointer;
+      transition: all .15s; line-height: 1.4;
+    }
+    .prompt-btn:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(124,109,240,.06);
+    }
+
+    /* ─── Chat pane ─── */
+    .chat-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px 0;
+      display: flex;
+      flex-direction: column;
+      scroll-behavior: smooth;
+    }
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+    /* Empty state */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; flex: 1;
+      gap: 20px; padding: 48px 24px; text-align: center;
+      animation: fadeUp .4s ease;
+    }
+    .empty-icon {
+      width: 64px; height: 64px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-lt));
+      border-radius: 18px;
+      display: flex; align-items: center; justify-content: center; font-size: 30px;
+      box-shadow: 0 8px 32px rgba(124,109,240,.25);
+    }
+    .empty-state h2 { font-size: 22px; font-weight: 700; color: var(--text); }
+    .empty-state p { font-size: 14px; color: var(--sub); max-width: 360px; line-height: 1.65; }
+
+    /* Message rows */
+    .msg {
+      padding: 18px 32px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      animation: fadeUp .25s ease;
+    }
+    .msg:hover { background: rgba(255,255,255,.015); }
+    .msg.user { background: rgba(124,109,240,.04); }
+    .msg.user:hover { background: rgba(124,109,240,.07); }
+
+    .av {
+      width: 34px; height: 34px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .av.user-av { background: linear-gradient(135deg, var(--accent), var(--accent-lt)); }
+    .av.bot-av { background: var(--card); border: 1px solid var(--border2); font-size: 14px; }
+
+    .msg-body { flex: 1; min-width: 0; }
+    .msg-name {
+      font-size: 12px; font-weight: 600; color: var(--sub);
+      margin-bottom: 6px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .msg-name .tag {
+      background: rgba(124,109,240,.15);
+      color: var(--accent-lt);
+      border-radius: 4px;
+      padding: 1px 6px; font-size: 10px; font-weight: 500;
+    }
+    .msg-text {
+      font-size: 14px; line-height: 1.75; color: var(--text);
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .msg-text strong { color: var(--accent-lt); font-weight: 600; }
+
+    .sources-wrap { margin-top: 12px; }
+    .sources-head {
+      font-size: 11px; color: var(--muted); font-weight: 600;
+      text-transform: uppercase; letter-spacing: .8px;
+      margin-bottom: 6px;
+    }
+    .source-list { display: flex; flex-direction: column; gap: 4px; }
+    .source-item {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px; color: var(--sub);
+    }
+    .src-icon { font-size: 12px; flex-shrink: 0; }
+    .src-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .src-score {
+      background: rgba(52,211,153,.1); color: var(--green);
+      border-radius: 999px; padding: 1px 8px;
+      font-size: 10px; font-weight: 600; flex-shrink: 0;
+    }
+
+    .typing-row { padding: 18px 32px; display: flex; gap: 14px; align-items: flex-start; }
+    .dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+    .d { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: blink 1.4s infinite; }
+    .d:nth-child(2){ animation-delay:.2s } .d:nth-child(3){ animation-delay:.4s }
+    @keyframes blink { 0%,80%,100%{opacity:.3;transform:scale(.9)} 40%{opacity:1;transform:scale(1.1)} }
+
+    .msg-text.err { color: var(--red); }
+
+    /* System message */
+    .sys-msg {
+      padding: 10px 32px;
+      animation: fadeUp .3s ease;
+    }
+    .sys-bubble {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(52,211,153,.08);
+      border: 1px solid rgba(52,211,153,.2);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px; color: var(--green);
+    }
+
+    /* ─── Input bar ─── */
+    .input-bar {
+      padding: 16px 32px 22px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .input-wrap {
+      display: flex; align-items: flex-end; gap: 10px;
+      background: var(--card);
+      border: 1.5px solid var(--border2);
+      border-radius: 14px;
+      padding: 10px 14px;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .input-wrap:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124,109,240,.12);
+    }
+    .input-wrap.disabled { opacity: .5; pointer-events: none; }
+    #q {
+      flex: 1; background: none; border: none; outline: none;
+      font-family: 'Inter', sans-serif; font-size: 14px;
+      color: var(--text); resize: none; max-height: 120px;
+      line-height: 1.55;
+    }
+    #q::placeholder { color: var(--muted); }
+    #send {
+      width: 36px; height: 36px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), var(--accent-lt));
+      border: none; border-radius: 9px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; color: #fff;
+      transition: transform .15s, opacity .15s;
+    }
+    #send:hover { transform: scale(1.06); }
+    #send:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+    .hint { font-size: 11px; color: var(--muted); text-align: center; margin-top: 8px; }
+
+    @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+    @media(max-width:680px){
+      .sidebar { display: none; }
+      .msg, .typing-row, .sys-msg { padding: 14px 16px; }
+      .input-bar { padding: 12px 16px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <a href="/" class="brand">
+    <div class="brand-icon">✦</div>
+    DocMind
+  </a>
+  <div class="topbar-sep"></div>
+  <div class="doc-badge" id="topBadge">
+    <div class="dot-none" id="topDot"></div>
+    <span id="topText">No document loaded</span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sb-section">
+      <div class="sb-label">Upload Document</div>
+    </div>
+
+    <div class="upload-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".pdf" />
+      <div class="upload-icon">📄</div>
+      <div class="upload-title">Drop a PDF here</div>
+      <div class="upload-sub">or click to browse · max 20MB</div>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-label">
+        <span id="progressIcon">⏳</span>
+        <span id="progressText">Indexing document…</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+
+    <div class="sb-divider"></div>
+
+    <div class="sb-section" id="docInfoSection" style="display:none;">
+      <div class="sb-label">Active Document</div>
+      <div class="sb-stat"><span class="sb-stat-key">File</span><span class="sb-stat-val" id="statFile">—</span></div>
+      <div class="sb-stat"><span class="sb-stat-key">Pages</span><span class="sb-stat-val" id="statPages">—</span></div>
+      <div class="sb-stat"><span class="sb-stat-key">Chunks</span><span class="sb-stat-val accent" id="statChunks">—</span></div>
+    </div>
+    <div class="sb-divider" id="docDivider" style="display:none;"></div>
+
+    <div class="sb-section">
+      <div class="sb-label">How it works</div>
+    </div>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <div class="step-info"><strong>Upload PDF</strong><span>Drag & drop or browse</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <div class="step-info"><strong>Auto-index</strong><span>Chunk → embed → store</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <div class="step-info"><strong>Ask anything</strong><span>AI answers from your doc</span></div>
+      </div>
+    </div>
+
+    <div class="sb-divider"></div>
+
+    <div class="sb-section">
+      <div class="sb-label">Suggested</div>
+    </div>
+    <div class="prompts">
+      <button class="prompt-btn" onclick="ask(this)">What is this document about?</button>
+      <button class="prompt-btn" onclick="ask(this)">Summarize the key points</button>
+      <button class="prompt-btn" onclick="ask(this)">What are the main conclusions?</button>
+    </div>
+  </aside>
+
+  <!-- Chat -->
+  <div class="chat-pane">
+    <div class="messages" id="msgs">
+      <div class="empty-state" id="empty">
+        <div class="empty-icon">✦</div>
+        <h2>Upload a PDF to get started</h2>
+        <p>Drop any PDF in the sidebar and start asking questions. Your document will be indexed automatically.</p>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-wrap" id="inputWrap">
+        <textarea id="q" rows="1" placeholder="Upload a PDF first…" disabled></textarea>
+        <button id="send" disabled>➤</button>
+      </div>
+      <div class="hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const msgs      = document.getElementById('msgs');
+  const input     = document.getElementById('q');
+  const btn       = document.getElementById('send');
+  const dropZone  = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const progressW = document.getElementById('progressWrap');
+  const progressF = document.getElementById('progressFill');
+  const progressT = document.getElementById('progressText');
+  const progressI = document.getElementById('progressIcon');
+  const inputWrap = document.getElementById('inputWrap');
+  const topBadge  = document.getElementById('topText');
+  const topDot    = document.getElementById('topDot');
+  const sid       = Math.random().toString(36).slice(2);
+  let busy = false;
+
+  // ── Check status on load ──
+  (async () => {
+    try {
+      const r = await fetch('/api/status');
+      const s = await r.json();
+      if (s.indexed) enableChat(s);
+    } catch {}
+  })();
+
+  // ── Upload: click or drag ──
+  dropZone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) uploadFile(fileInput.files[0]); });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const f = e.dataTransfer.files[0];
+    if (f && f.type === 'application/pdf') uploadFile(f);
+    else alert('Only PDF files are supported.');
+  });
+
+  async function uploadFile(file) {
+    // Show progress
+    progressW.classList.add('show');
+    progressT.textContent = 'Uploading…';
+    progressI.textContent = '⏳';
+    progressF.className = 'progress-fill';
+
+    topDot.className = 'dot-indexing';
+    topBadge.textContent = file.name + ' · indexing…';
+
+    disableChat();
+
+    const fd = new FormData();
+    fd.append('pdf', file);
+
+    try {
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.error) { alert(d.error); progressW.classList.remove('show'); return; }
+
+      progressT.textContent = 'Indexing document (this may take a minute)…';
+
+      // Poll for completion
+      const poll = setInterval(async () => {
+        try {
+          const sr = await fetch('/api/status');
+          const st = await sr.json();
+          if (st.indexed) {
+            clearInterval(poll);
+            progressF.classList.add('done');
+            progressT.textContent = 'Indexing complete!';
+            progressI.textContent = '✅';
+            enableChat(st);
+
+            // Add system message
+            removeEmpty();
+            const sm = document.createElement('div');
+            sm.className = 'sys-msg';
+            sm.innerHTML = `<div class="sys-bubble">📄 <strong>${esc(st.filename)}</strong> indexed — ${st.pages} pages, ${st.chunks} chunks ready</div>`;
+            msgs.appendChild(sm);
+            scroll();
+
+            setTimeout(() => { progressW.classList.remove('show'); }, 3000);
+          }
+        } catch {}
+      }, 2000);
+    } catch {
+      progressT.textContent = 'Upload failed';
+      progressI.textContent = '❌';
+    }
+  }
+
+  function enableChat(st) {
+    input.disabled = false;
+    btn.disabled = false;
+    input.placeholder = 'Ask a question about ' + (st.filename || 'the document') + '…';
+    inputWrap.classList.remove('disabled');
+    topDot.className = 'dot-live';
+    topBadge.textContent = (st.filename || 'Document') + ' · ' + st.chunks + ' chunks';
+
+    const infoSec = document.getElementById('docInfoSection');
+    const docDiv = document.getElementById('docDivider');
+    infoSec.style.display = 'block';
+    docDiv.style.display = 'block';
+    document.getElementById('statFile').textContent = st.filename || '—';
+    document.getElementById('statPages').textContent = st.pages || '—';
+    document.getElementById('statChunks').textContent = st.chunks || '—';
+
+    // Update empty state text if still visible
+    const emptyEl = document.getElementById('empty');
+    if (emptyEl) {
+      emptyEl.querySelector('h2').textContent = 'Ask anything about the document';
+      emptyEl.querySelector('p').textContent = 'Your PDF has been indexed. Ask any question and get a precise, grounded answer.';
+    }
+  }
+
+  function disableChat() {
+    input.disabled = true;
+    btn.disabled = true;
+    input.placeholder = 'Waiting for indexing to complete…';
+    inputWrap.classList.add('disabled');
+  }
+
+  // ── Chat ──
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  btn.addEventListener('click', send);
+  function ask(el) { input.value = el.textContent.trim(); send(); }
+
+  function removeEmpty() { const el = document.getElementById('empty'); if (el) el.remove(); }
+
+  function addUser(text) {
+    removeEmpty();
+    const d = document.createElement('div');
+    d.className = 'msg user';
+    d.innerHTML = `
+      <div class="av user-av">U</div>
+      <div class="msg-body">
+        <div class="msg-name">You</div>
+        <div class="msg-text">${esc(text)}</div>
+      </div>`;
+    msgs.appendChild(d);
+    scroll();
+  }
+
+  function addTyping() {
+    removeEmpty();
+    const d = document.createElement('div');
+    d.className = 'typing-row'; d.id = 'typing';
+    d.innerHTML = `
+      <div class="av bot-av">✦</div>
+      <div class="msg-body">
+        <div class="msg-name">DocMind <span class="tag">AI</span></div>
+        <div class="dots"><div class="d"></div><div class="d"></div><div class="d"></div></div>
+      </div>`;
+    msgs.appendChild(d);
+    scroll();
+  }
+
+  function removeTyping() { const el = document.getElementById('typing'); if (el) el.remove(); }
+
+  function addBot(answer, sources) {
+    const d = document.createElement('div');
+    d.className = 'msg';
+    const fmt = esc(answer)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+
+    let srcHtml = '';
+    if (sources?.length) {
+      srcHtml = `<div class="sources-wrap">
+        <div class="sources-head">Sources</div>
+        <div class="source-list">
+          ${sources.map(s => `
+            <div class="source-item">
+              <span class="src-icon">📄</span>
+              <span class="src-text">${esc(s.text.slice(0, 90))}…</span>
+              <span class="src-score">${s.score}%</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    }
+    d.innerHTML = `
+      <div class="av bot-av">✦</div>
+      <div class="msg-body">
+        <div class="msg-name">DocMind <span class="tag">AI</span></div>
+        <div class="msg-text">${fmt}</div>
+        ${srcHtml}
+      </div>`;
+    msgs.appendChild(d);
+    scroll();
+  }
+
+  function addError(msg) {
+    const d = document.createElement('div');
+    d.className = 'msg';
+    d.innerHTML = `
+      <div class="av bot-av">⚠</div>
+      <div class="msg-body">
+        <div class="msg-name">DocMind</div>
+        <div class="msg-text err">${esc(msg)}</div>
+      </div>`;
+    msgs.appendChild(d);
+    scroll();
+  }
+
+  async function send() {
+    const q = input.value.trim();
+    if (!q || busy) return;
+    busy = true; btn.disabled = true;
+    input.value = ''; input.style.height = 'auto';
+
+    addUser(q);
+    addTyping();
+
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, sessionId: sid }),
+      });
+      const data = await r.json();
+      removeTyping();
+      if (data.error) addError(data.error);
+      else addBot(data.answer, data.sources);
+    } catch {
+      removeTyping();
+      addError('Cannot reach server.');
+    } finally {
+      busy = false; btn.disabled = false; input.focus();
+    }
+  }
+
+  function scroll() { msgs.scrollTop = msgs.scrollHeight; }
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>

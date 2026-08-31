@@ -1,13 +1,12 @@
-# 📄 RAG Project — PDF Chatbot with LangChain + Pinecone + OpenRouter
+# ✦ DocMind — AI Document Assistant
 
-> A production-ready **Retrieval-Augmented Generation (RAG)** pipeline that lets you chat with any PDF document using AI. Ask questions in plain English and get accurate, context-aware answers — powered by OpenRouter LLMs and Pinecone vector search.
+> Upload any PDF and chat with it instantly. Drag & drop your document, and DocMind will index it automatically — then ask questions and get accurate, context-grounded answers.
 
 ---
 
 ## 📑 Table of Contents
 
-- [What is RAG?](#-what-is-rag)
-- [Project Overview](#-project-overview)
+- [Features](#-features)
 - [Architecture](#-architecture)
 - [Project Structure](#-project-structure)
 - [Tech Stack](#-tech-stack)
@@ -15,73 +14,51 @@
 - [Environment Variables](#-environment-variables)
 - [Installation](#-installation)
 - [How to Run](#-how-to-run)
-  - [Step 1 — Index the PDF](#step-1--index-the-pdf)
-  - [Step 2 — Chat with the PDF](#step-2--chat-with-the-pdf)
-  - [Step 3 — Clear the Index (Optional)](#step-3--clear-the-index-optional)
-- [Scripts Reference](#-scripts-reference)
-- [File Reference](#-file-reference)
-- [How It Works (Deep Dive)](#-how-it-works-deep-dive)
+- [Usage](#-usage)
+- [CLI Mode](#-cli-mode)
+- [API Reference](#-api-reference)
 - [Sample Output](#-sample-output)
-- [Known Limitations](#-known-limitations)
 - [Troubleshooting](#-troubleshooting)
 - [Future Improvements](#-future-improvements)
 - [License](#-license)
 
 ---
 
-## 🧠 What is RAG?
+## ✨ Features
 
-**Retrieval-Augmented Generation (RAG)** is an AI technique that combines two things:
-
-1. **Retrieval** — searching a database of your documents for relevant information
-2. **Generation** — using a Large Language Model (LLM) to generate a human-like answer using only the retrieved information
-
-This is better than just asking an LLM directly because:
-- LLMs have knowledge cutoffs and don't know about *your* documents
-- RAG grounds the answers in *your actual data*, reducing hallucinations
-- The LLM is told: "Answer ONLY from the provided context"
-
----
-
-## 🚀 Project Overview
-
-This project implements a complete RAG pipeline for a single PDF document (`result.pdf`). The document contains **hackathon project proposals** covering:
-
-- 🎓 **Admission Management System** — AI-powered college admission document verification
-- 🛡️ **Women's Safety & Deepfake Detection** — CNN-based deepfake classifier + SOS escalation app
-- ⚖️ **Legal-Tech for Police** — AI assistant for writing accurate FIRs (First Information Reports)
-
-You can ask natural language questions like:
-- *"What features does the Admission Management System have?"*
-- *"How does deepfake detection work in this project?"*
-- *"Explain the 3-level SOS escalation system"*
-
-...and get detailed, accurate answers sourced directly from the PDF.
+- 📄 **Drag & drop any PDF** — Upload through the web UI, auto-indexed in seconds
+- 💬 **Chat with your document** — Ask questions in plain English, get accurate answers
+- 🔍 **Semantic search** — Finds the most relevant chunks using vector similarity
+- 📎 **Source citations** — See which parts of the PDF the answer came from (with similarity %)
+- 🧠 **Conversation memory** — AI remembers what you asked before in the session
+- 🔄 **Swap documents** — Upload a new PDF anytime, old data is automatically cleared
+- 🌙 **Dark mode UI** — Clean, minimal interface inspired by modern AI products
+- 🆓 **100% free** — Uses free-tier models (OpenRouter + Pinecone)
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────── INDEXING PIPELINE (index.js) ───────────────────┐
-│                                                                      │
-│  result.pdf  →  PDFLoader  →  TextSplitter  →  OpenAI Embeddings   │
-│                                    ↓                                 │
-│                             Pinecone Vector Store (index: "rag")    │
-└──────────────────────────────────────────────────────────────────────┘
+┌─── UPLOAD FLOW ──────────────────────────────────────────┐
+│                                                            │
+│  User drops PDF  →  Multer saves file  →  PDFLoader       │
+│       ↓                                                    │
+│  RecursiveCharacterTextSplitter (1000 chars, 200 overlap) │
+│       ↓                                                    │
+│  OpenAI Embeddings (text-embedding-3-small via OpenRouter)│
+│       ↓                                                    │
+│  Pinecone Vector Store (auto-clears old data first)       │
+└────────────────────────────────────────────────────────────┘
 
-┌─────────────────── QUERY PIPELINE (query.js) ──────────────────────┐
-│                                                                      │
-│  User Question  →  Embed Question  →  Pinecone Similarity Search   │
-│                                              ↓                       │
-│                              Top 10 Matching Chunks (Context)        │
-│                                              ↓                       │
-│                    [System Prompt + Context + Question]              │
-│                                              ↓                       │
-│              OpenRouter LLM (nvidia/nemotron-3-ultra:free)          │
-│                                              ↓                       │
-│                              Answer printed to terminal              │
-└──────────────────────────────────────────────────────────────────────┘
+┌─── QUERY FLOW ───────────────────────────────────────────┐
+│                                                            │
+│  User question  →  Embed  →  Pinecone search (top 8)     │
+│       ↓                                                    │
+│  [System prompt + Context + Question]                     │
+│       ↓                                                    │
+│  LLM (nvidia/nemotron-3-ultra:free)  →  Answer + Sources │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -90,322 +67,227 @@ You can ask natural language questions like:
 
 ```
 RAG-Project-main/
-├── .gitignore                    ← Git ignore rules
-├── README.md                     ← This file
+├── .gitignore
+├── README.md
 └── ai service/
-    ├── .env                      ← API keys (NOT committed to git)
-    ├── index.js                  ← Ingestion script (PDF → Pinecone)
-    ├── query.js                  ← Interactive chatbot CLI
+    ├── .env                      ← API keys (not in git)
+    ├── server.js                 ← Express server + upload + chat API
+    ├── index.js                  ← CLI ingestion script (index a PDF)
+    ├── query.js                  ← CLI interactive chatbot
     ├── deleteAll.js              ← Utility to wipe Pinecone index
-    ├── result.pdf                ← Source document (hackathon proposals)
-    ├── package.json              ← Node.js config + npm scripts
-    ├── package-lock.json         ← Locked dependency versions
-    └── node_modules/             ← Installed packages (not in git)
+    ├── result.pdf                ← Default sample document
+    ├── package.json              ← Dependencies + npm scripts
+    ├── public/
+    │   └── index.html            ← Web UI (drag & drop + chat)
+    └── uploads/                  ← Temp folder for uploaded PDFs (gitignored)
 ```
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Technology | Purpose | Version |
-|---|---|---|
-| **Node.js** | Runtime | v18+ |
-| **LangChain** | RAG orchestration framework | ^1.x |
-| `@langchain/community` | PDFLoader for reading PDFs | ^1.1.24 |
-| `@langchain/textsplitters` | Split PDF into chunks | ^1.0.1 |
-| `@langchain/openai` | OpenAI-compatible embeddings | ^1.3.0 |
-| `@langchain/pinecone` | LangChain ↔ Pinecone bridge | ^1.0.1 |
-| **Pinecone** | Vector database for similarity search | ^5.1.2 |
-| **OpenRouter** | Unified LLM API gateway | — |
-| `text-embedding-3-small` | Embedding model (via OpenRouter) | — |
-| `nvidia/nemotron-3-ultra:free` | LLM for answer generation (free) | — |
-| **dotenv** | Load environment variables | 16.6.1 |
-| **readline-sync** | Interactive CLI input | ^1.4.10 |
-| **pdf-parse** | PDF parsing engine | 1.1.1 |
+| Technology | Purpose |
+|---|---|
+| **Node.js** | Runtime |
+| **Express** | Web server + API |
+| **Multer** | File upload handling |
+| **LangChain** | PDF loading, chunking, embeddings |
+| **Pinecone** | Vector database |
+| **OpenRouter** | LLM + embedding API gateway |
+| `text-embedding-3-small` | Embedding model |
+| `nvidia/nemotron-3-ultra:free` | LLM for answer generation |
+| **Vanilla HTML/CSS/JS** | Web UI (no framework needed) |
 
 ---
 
 ## ✅ Prerequisites
 
-Before running this project, you need:
-
 1. **Node.js v18+** — [Download](https://nodejs.org)
 2. **OpenRouter Account** — [Sign up free](https://openrouter.ai) → Get API key at [openrouter.ai/keys](https://openrouter.ai/keys)
 3. **Pinecone Account** — [Sign up free](https://app.pinecone.io) → Create an index:
-   - Index name: `rag`
-   - Dimensions: `1536` (matches `text-embedding-3-small`)
+   - Name: `rag`
+   - Dimensions: `1536`
    - Metric: `cosine`
-   - Cloud: `AWS`, Region: `us-east-1`
+   - Region: `us-east-1`
 
 ---
 
 ## 🔐 Environment Variables
 
-All secrets live in `ai service/.env`. **Never commit this file to git.**
+Create `ai service/.env`:
 
 ```env
-# OpenRouter API Key — get from https://openrouter.ai/keys
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# Pinecone API Key — get from https://app.pinecone.io
-PINECONE_API_KEY=pcsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# Pinecone region (match your index region)
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+PINECONE_API_KEY=pcsk_your-key-here
 PINECONE_ENVIRONMENT=us-east-1
-
-# Your Pinecone index name
 PINECONE_INDEX_NAME=rag
-
-# Optional — not currently used by any script
-GOOGLE_API_KEY=your_google_api_key_here
 ```
 
-> ⚠️ `.env` is listed in `.gitignore` and will never be pushed to GitHub.
+> ⚠️ `.env` is gitignored and will never be committed.
 
 ---
 
 ## 📦 Installation
 
 ```bash
-# 1. Clone the repo
-git clone git@github.com:shreykumarsingh/RAG-Project.git
-cd RAG-Project/ai\ service
-
-# 2. Install dependencies
+git clone git@github.com:shreykumarsingh/RAG-PROJECT.git
+cd RAG-PROJECT/ai\ service
 npm install
-
-# 3. Copy and fill in your .env
-cp .env.example .env
-# Edit .env with your real API keys
 ```
-
-> **Note:** If you already have `node_modules/`, skip step 2.
 
 ---
 
 ## ▶️ How to Run
 
-### Step 1 — Index the PDF
-
-This reads `result.pdf`, splits it into chunks, creates vector embeddings, and stores them in Pinecone. **Run this once** (or again whenever you change the PDF).
+### Web UI (recommended)
 
 ```bash
-npm run index
+npm start
 ```
 
-**Expected output:**
-```
-✅  PDF loaded  (22 pages)
-✅  Chunking completed  (55 chunks)
-✅  Embedding model configured
-✅  Pinecone configured
-⏳  Uploading vectors to Pinecone...
-🎉  Data stored successfully in Pinecone!
-```
+Then open **[http://localhost:3000](http://localhost:3000)** and:
+1. 📄 Drag & drop any PDF into the sidebar
+2. ⏳ Wait for indexing to complete (~30s)
+3. 💬 Start asking questions!
 
 ---
 
-### Step 2 — Chat with the PDF
+## 📖 Usage
 
-Start the interactive chatbot. Type any question about your document.
+### Uploading a PDF
+
+- **Drag and drop** a PDF onto the upload zone in the sidebar
+- Or **click** the upload zone to browse for a file
+- Max file size: **20MB**
+- The old document is automatically replaced when you upload a new one
+
+### Chatting
+
+- Type any question in the input box and press Enter
+- The AI answers **only from your document** — no hallucination
+- Source chunks are shown below each answer with similarity scores
+- Conversation history is maintained within the session
+
+---
+
+## 🖥️ CLI Mode
+
+You can also use the project from the command line:
 
 ```bash
-npm run query
+# Index a specific PDF (one-time)
+npm run index          # indexes result.pdf
+
+# Chat interactively in terminal
+npm run query          # starts CLI chatbot
+
+# Clear all vectors
+npm run delete         # wipes Pinecone index
 ```
-
-**Expected output:**
-```
-🚀  RAG Chatbot ready! Type your question or press Ctrl+C to exit.
-
-You ➜  What is the Admission Management System?
-
-🤖  The Admission Management System is a secure, searchable workflow that 
-    eliminates chat-based document exchange. Features include bulk Excel upload,
-    AI-powered OCR verification, QR code tracking, and missing-document detection.
-
-You ➜  _
-```
-
-Press `Ctrl+C` to exit.
 
 ---
 
-### Step 3 — Clear the Index (Optional)
+## 📡 API Reference
 
-Deletes **all** vectors from your Pinecone index. Use this if you want to re-index a new document.
+### `POST /api/upload`
+Upload and index a PDF document.
 
 ```bash
-npm run delete
+curl -X POST http://localhost:3000/api/upload \
+  -F "pdf=@/path/to/document.pdf"
 ```
 
-> ⚠️ **Warning:** This is irreversible. All stored vectors will be permanently deleted.
+**Response:** `{ "status": "indexing", "filename": "document.pdf" }`
 
 ---
 
-## 📜 Scripts Reference
+### `GET /api/status`
+Check current document status.
 
-| Command | Script | Description |
-|---|---|---|
-| `npm run index` | `node index.js` | Index `result.pdf` into Pinecone |
-| `npm run query` | `node query.js` | Launch interactive chatbot CLI |
-| `npm run delete` | `node deleteAll.js` | Wipe all vectors from Pinecone |
-
----
-
-## 📂 File Reference
-
-### `index.js` — Document Ingestion
-
-The indexing pipeline does 5 things in sequence:
-
-1. **Validates** all required environment variables are present
-2. **Loads** `result.pdf` using LangChain's `PDFLoader`
-3. **Splits** the document into 1000-character chunks with 200-character overlap using `RecursiveCharacterTextSplitter`
-4. **Embeds** each chunk using OpenRouter's `text-embedding-3-small` model (1536-dimensional vectors)
-5. **Stores** all vectors into Pinecone with metadata (original text, page number, etc.)
-
-```
-Chunk size:    1000 characters
-Chunk overlap: 200  characters
-Total chunks:  ~55 (for result.pdf)
-Model:         text-embedding-3-small (OpenRouter)
-Max parallel:  5 concurrent uploads
+**Response:**
+```json
+{
+  "filename": "document.pdf",
+  "pages": 22,
+  "chunks": 55,
+  "indexed": true,
+  "indexing": false
+}
 ```
 
 ---
 
-### `query.js` — Interactive Chatbot
+### `POST /api/chat`
+Ask a question about the indexed document.
 
-The query loop does 5 things for every question:
+```bash
+curl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is this about?", "sessionId": "abc123"}'
+```
 
-1. **Validates** environment variables on startup
-2. **Embeds** the user's question into a 1536-dimensional vector
-3. **Searches** Pinecone for the top 10 most semantically similar chunks
-4. **Constructs** a prompt: `[System Instructions] + [Retrieved Context] + [User Question]`
-5. **Calls** the LLM and prints the answer
-
-Key design decisions:
-- **Conversation history** is maintained in memory — the AI remembers what you asked before
-- **System prompt** uses the `system` role (not `user`) for proper instruction following
-- **`while(true)` loop** instead of recursion — prevents stack overflow on long sessions
-- **Clients created once** at startup, not per-query — faster and more efficient
-- **`max_tokens: 1024`** — keeps responses within free tier limits
-
----
-
-### `deleteAll.js` — Cleanup Utility
-
-Simple utility that connects to Pinecone and calls `index.deleteAll()`. Useful when:
-- Switching to a different PDF document
-- Re-indexing after making changes to chunking settings
-- Clearing test data
+**Response:**
+```json
+{
+  "answer": "This document is about...",
+  "sources": [
+    { "text": "...", "score": 95 }
+  ]
+}
+```
 
 ---
 
-### `result.pdf` — Source Document
+### `GET /api/health`
+Health check.
 
-A 22-page PDF containing hackathon project proposals:
-
-| Section | Description |
-|---|---|
-| Admission Management System | Open-source college admission workflow with AI document verification |
-| PixelVerse (Deepfake Detection) | EfficientNet-based CNN classifier with heatmaps and legal PDF reports |
-| Secure Reporting Portal | Encrypted uploads with anonymous/confidential modes |
-| Evidence Locker | SHA-256 timestamped hashing for legal admissibility |
-| SOS App (3-Level Escalation) | Volunteers → Campus Security → Police integration |
-| Safe Walk | Live-tracked volunteer escort system |
-| Voice Alert / Fake Call | Trigger fake calls to escape unsafe situations |
-| Legal-Tech for Police | AI assistant for writing accurate FIRs with section suggestions |
+**Response:** `{ "status": "ok", "index": "rag" }`
 
 ---
 
 ## 💬 Sample Output
 
 ```
-🚀  RAG Chatbot ready! Type your question or press Ctrl+C to exit.
+📄 research_paper.pdf indexed — 15 pages, 42 chunks ready
 
-You ➜  What is this document about?
+You: What methodology was used in the study?
 
-🤖  This document is a compilation of hackathon project ideas across several domains:
+DocMind [AI]: Based on the document, the study employed a mixed-methods
+approach combining quantitative surveys (n=500) with qualitative
+semi-structured interviews (n=30). The data was analyzed using
+thematic analysis for qualitative data and SPSS for statistical
+analysis of the survey responses.
 
-    1. Admission Management System – An open-source web app to replace WhatsApp-based 
-       document collection for college admissions, with AI-powered OCR verification.
-
-    2. Women's Safety & Deepfake Detection – Multiple concepts including a CNN-based 
-       deepfake classifier, encrypted reporting portal, and SOS escalation app.
-
-    3. Legal-Tech for Police – An AI assistant to help officers write accurate FIRs 
-       by suggesting relevant sections and landmark case laws.
-
-You ➜  How does the deepfake detection work?
-
-🤖  The deepfake detection engine uses image forensic analysis with:
-    - Face warping detection (landmark inconsistency)
-    - GAN fingerprint detection (artifact detection)  
-    - Inconsistent lighting/shadow analysis (frequency domain)
-    
-    Models are trained on FaceForensics++ and the DeepFake Detection Challenge Dataset.
-
-You ➜  
+Sources:
+ 📄 "The methodology section outlines a mixed-methods..."  95%
+ 📄 "Data analysis was performed using thematic..."        89%
+ 📄 "A total of 500 survey respondents were..."            85%
 ```
-
----
-
-## ⚠️ Known Limitations
-
-| Limitation | Details |
-|---|---|
-| **Single PDF only** | Currently hardcoded to `result.pdf`. To use a different PDF, change the path in `index.js` and re-run indexing. |
-| **In-memory chat history** | Conversation history is lost when you exit (`Ctrl+C`). Not persisted to disk. |
-| **Free model rate limits** | Free OpenRouter models have rate limits and may occasionally return 429 errors. Retry after a few seconds. |
-| **No web UI** | This is a CLI-only tool. No browser interface. |
-| **English only** | The prompts and embedding model are optimized for English text. |
-| **Context window** | Only top 10 chunks are retrieved per query. Very long or complex answers may be incomplete. |
 
 ---
 
 ## 🔧 Troubleshooting
 
-### ❌ `401 Authentication failed`
-Your OpenRouter API key is invalid or expired.
-→ Get a new key at [https://openrouter.ai/keys](https://openrouter.ai/keys)
-
-### ❌ `404 Pinecone index not found`
-The Pinecone index `rag` doesn't exist.
-→ Create it at [https://app.pinecone.io](https://app.pinecone.io) with:
-- **Dimensions:** `1536`
-- **Metric:** `cosine`
-
-### ❌ `402 Insufficient credits`
-The LLM model you selected requires paid credits.
-→ Use a free model: `nvidia/nemotron-3-ultra-550b-a55b:free`
-
-### ❌ `429 Rate limited`
-You've hit the free tier rate limit.
-→ Wait 30–60 seconds and try again, or add credits at [openrouter.ai/settings/credits](https://openrouter.ai/settings/credits)
-
-### ❌ `TTY not supported` when running query.js
-You're running `query.js` in a non-interactive shell (e.g., piping input).
-→ Run it in a real terminal: `npm run query`
-
-### Node modules missing
-```bash
-npm install
-```
+| Error | Fix |
+|---|---|
+| `401 Authentication failed` | Get a new key at [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `404 Pinecone index not found` | Create index `rag` at [app.pinecone.io](https://app.pinecone.io) (1536 dims, cosine) |
+| `429 Rate limited` | Wait 30–60s and try again (free tier limit) |
+| `No document indexed yet` | Upload a PDF first via the web UI |
+| `Only PDF files are allowed` | The upload only accepts `.pdf` files |
+| `File too large` | Maximum upload size is 20MB |
 
 ---
 
 ## 🔮 Future Improvements
 
-- [ ] **Web UI** — Build a React/Next.js frontend with a chat interface
-- [ ] **Multi-PDF support** — Index multiple documents and search across all of them
-- [ ] **Persistent chat history** — Save conversations to a JSON/SQLite file
-- [ ] **Streaming responses** — Stream LLM output token-by-token for faster UX
-- [ ] **Source citations** — Show which page/chunk the answer came from
-- [ ] **Re-ranking** — Use a cross-encoder to re-rank retrieved chunks for better accuracy
-- [ ] **Docker support** — Containerize the app for easy deployment
-- [ ] **REST API** — Wrap the query pipeline in an Express.js API server
-- [ ] **Upload your own PDF** — Allow users to upload any PDF via CLI or UI
+- [ ] Support `.docx`, `.txt`, and `.csv` files
+- [ ] Multi-document search (index multiple PDFs)
+- [ ] Streaming LLM responses (token by token)
+- [ ] Persistent chat history (save to disk)
+- [ ] Page number citations in answers
+- [ ] Docker deployment
+- [ ] User authentication
 
 ---
 
@@ -417,6 +299,6 @@ MIT License — free to use, modify, and distribute.
 
 <div align="center">
 
-Built with ❤️ using **LangChain** · **Pinecone** · **OpenRouter** · **Node.js**
+**Built with ❤️ by Shrey Kumar Singh**
 
 </div>
