@@ -30,6 +30,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = join(__dirname, 'uploads');
 if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR);
 
+// ── Startup checks ──────────────────────────────────────────────────────────
+if (!process.env.OPENROUTER_API_KEY) {
+  console.error('❌  Missing OPENROUTER_API_KEY in .env');
+  process.exit(1);
+}
+if (!process.env.PINECONE_API_KEY) {
+  console.error('❌  Missing PINECONE_API_KEY in .env');
+  process.exit(1);
+}
+if (!process.env.PINECONE_INDEX_NAME) {
+  console.error('❌  Missing PINECONE_INDEX_NAME in .env');
+  process.exit(1);
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -210,10 +224,12 @@ Keep your answers clear, concise, and educational.`,
       includeMetadata: true,
     });
 
-    const sources = searchResults.matches.map((m) => ({
-      text: m.metadata.text,
-      score: Math.round(m.score * 100),
-    }));
+    const sources = searchResults.matches
+      .filter((m) => m.metadata && typeof m.metadata.text === 'string')
+      .map((m) => ({
+        text: m.metadata.text,
+        score: Math.round(m.score * 100),
+      }));
 
     const context = sources.map((s) => s.text).join('\n\n---\n\n');
 

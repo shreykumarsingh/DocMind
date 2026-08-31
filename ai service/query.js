@@ -62,6 +62,7 @@ async function chatting(question) {
     });
 
     const context = searchResults.matches
+      .filter((match) => match.metadata && typeof match.metadata.text === 'string')
       .map((match) => match.metadata.text)
       .join('\n\n---\n\n');
 
