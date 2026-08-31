@@ -634,7 +634,13 @@
     try {
       const r = await fetch('/api/upload', { method: 'POST', body: fd });
       const d = await r.json();
-      if (d.error) { alert(d.error); progressW.classList.remove('show'); return; }
+      if (d.error) {
+        alert(d.error);
+        progressW.classList.remove('show');
+        topDot.className = 'dot-none';
+        topBadge.textContent = 'No document loaded';
+        return;
+      }
 
       progressT.textContent = 'Indexing document (this may take a minute)…';
 
@@ -689,6 +695,9 @@
     } catch {
       progressT.textContent = 'Upload failed';
       progressI.textContent = '❌';
+      topDot.className = 'dot-none';
+      topBadge.textContent = 'No document loaded';
+      setTimeout(() => { progressW.classList.remove('show'); }, 4000);
     }
   }
 
