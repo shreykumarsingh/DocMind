@@ -2,6 +2,16 @@
 
 > Upload any PDF and chat with it instantly. Drag & drop your document, and DocMind will index it automatically — then ask questions and get accurate, context-grounded answers.
 
+### 🚀 Quick Start
+
+```bash
+cd "ai service" && npm start
+```
+
+🌐 **Open the app →** [**http://localhost:3000**](http://localhost:3000)
+
+📦 **GitHub →** [**github.com/shreykumarsingh/RAG-PROJECT**](https://github.com/shreykumarsingh/RAG-PROJECT)
+
 ---
 
 ## 📑 Table of Contents
