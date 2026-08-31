@@ -16,6 +16,7 @@ cd "ai service" && npm install && npm start
 
 ## 📑 Table of Contents
 
+- [What is RAG?](#-what-is-rag)
 - [Features](#-features)
 - [Architecture](#-architecture)
 - [Project Structure](#-project-structure)
@@ -31,6 +32,17 @@ cd "ai service" && npm install && npm start
 - [Troubleshooting](#-troubleshooting)
 - [Future Improvements](#-future-improvements)
 - [License](#-license)
+
+---
+
+## 🧠 What is RAG?
+
+**Retrieval-Augmented Generation (RAG)** is an AI design pattern that addresses two major limitations of Large Language Models (LLMs): **hallucinations** (making up facts) and **knowledge cutoff** (lack of access to your private or fresh documents).
+
+Instead of relying solely on what the LLM learned during its training, a RAG pipeline works in three steps:
+1. **Retrieval**: When you ask a question, the system searches an external database (a Vector DB containing your chunked PDF) to fetch only the text segments most relevant to your query.
+2. **Augmentation**: The system dynamically combines those retrieved segments with your original question, creating a context-rich prompt.
+3. **Generation**: The LLM reads this custom prompt and generates a response. Because it is fed the exact source text, it writes a factual, grounded answer restricted strictly to your document.
 
 ---
 
