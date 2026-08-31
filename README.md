@@ -8,7 +8,7 @@
 cd "ai service" && npm install && npm start
 ```
 
-🌐 **Open the app →** [**http://localhost:3000**](http://localhost:3000)
+🌐 **Live Web App →** [**docmind-rag-beta.vercel.app**](https://docmind-rag-beta.vercel.app)
 
 📦 **GitHub →** [**github.com/shreykumarsingh/RAG-PROJECT**](https://github.com/shreykumarsingh/RAG-PROJECT)
 
@@ -191,6 +191,22 @@ Then open **[http://localhost:3000](http://localhost:3000)** and:
 PORT=8080 npm start
 # or add PORT=8080 to your .env
 ```
+
+### Deploy to Vercel (100% Free)
+
+You can deploy DocMind to Vercel's free tier:
+
+1. Go to [Vercel](https://vercel.com) and sign in.
+2. Click **Add New** → **Project** and import your repository.
+3. In the project configuration, configure:
+   - **Root Directory**: `ai service`
+4. Under **Environment Variables**, add your keys:
+   - `OPENROUTER_API_KEY`
+   - `PINECONE_API_KEY`
+   - `PINECONE_INDEX_NAME`
+5. Click **Deploy**.
+
+*Note: Since Vercel runs Serverless Functions, the document indexing processes synchronously to complete within serverless execution bounds.*
 
 ---
 
