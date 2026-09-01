@@ -89,21 +89,21 @@ let docState = {
 };
 
 // ── Check if there's already data in Pinecone from a previous run ───────────
-(async () => {
+async function ensureDocState() {
+  if (docState.indexed || docState.indexing) return docState;
   try {
     const stats = await pineconeIndex.describeIndexStats();
     const totalVectors = stats.totalRecordCount || 0;
     if (totalVectors > 0) {
       docState.indexed = true;
       docState.chunks = totalVectors;
-      // filename and pages are unknown from a previous session — leave as null/0
-      // The UI will still show "indexed" status correctly with chunk count.
-      docState.filename = 'Previous document';
-      docState.pages = 0;
-      console.log(`📄  Found ${totalVectors} existing vectors in Pinecone`);
+      docState.filename = docState.filename || 'Previous document';
     }
-  } catch { /* ignore connection errors on startup */ }
-})();
+  } catch { /* ignore connection errors */ }
+  return docState;
+}
+
+ensureDocState();
 
 // ── Helper: safely delete all vectors (handles 404 on empty index) ───────────
 // PineconeNotFoundError is thrown when deleteAll() is called on an empty
@@ -185,7 +185,7 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
 });
 
 // ── Document status ──────────────────────────────────────────────────────────
-app.get('/api/status', (_, res) => res.json(docState));
+app.get('/api/status', async (_, res) => res.json(await ensureDocState()));
 
 // ── Clear document ───────────────────────────────────────────────────────────
 app.post('/api/clear', async (_, res) => {
@@ -206,6 +206,8 @@ app.post('/api/clear', async (_, res) => {
 app.post('/api/chat', async (req, res) => {
   const { question, sessionId } = req.body;
   if (!question?.trim()) return res.status(400).json({ error: 'No question provided' });
+
+  await ensureDocState();
   if (!docState.indexed) return res.status(400).json({ error: 'No document indexed yet. Please upload a PDF first.' });
 
   // Initialise a clean session — only the system prompt is stored here.
@@ -286,6 +288,7 @@ app.get('/{*splat}', (req, res) => {
 });
 
 // ── Global error handler ───────────────────────────────────────────────────
+
 // Express 5 bubbles middleware errors (e.g. Multer fileFilter rejections)
 // to this 4-argument error handler. Without it they render as raw HTML stacks.
 // eslint-disable-next-line no-unused-vars
