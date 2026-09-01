@@ -7,11 +7,6 @@
 ```bash
 cd "ai service" && npm install && npm start
 ```
-
-🌐 **Live Web App →** [**docmind-rag-beta.vercel.app**](https://docmind-rag-beta.vercel.app)
-
-📦 **GitHub →** [**github.com/shreykumarsingh/RAG-PROJECT**](https://github.com/shreykumarsingh/RAG-PROJECT)
-
 ---
 
 ## 📑 Table of Contents
