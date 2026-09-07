@@ -1,33 +1,6 @@
-# Dependencies
 node_modules/
-.pnp
-.pnp.js
-
-# Uploaded PDFs (temp)
-uploads/
-
-# Environment variables (keep secrets out of git)
 .env
 .env.local
-.env.*.local
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+.vercel
+uploads/
 *.log
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Build output
-dist/
-build/

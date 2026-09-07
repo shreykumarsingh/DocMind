@@ -31,19 +31,26 @@ import os from 'os';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = os.tmpdir();
 
-// ── Startup checks ──────────────────────────────────────────────────────────
-if (!process.env.OPENROUTER_API_KEY) {
-  console.error('❌  Missing OPENROUTER_API_KEY in .env');
-  process.exit(1);
+// ── Helper to check required environment variables ──────────────────────────
+function checkEnvVars(res) {
+  const missing = [];
+  if (!process.env.OPENROUTER_API_KEY) missing.push('OPENROUTER_API_KEY');
+  if (!process.env.PINECONE_API_KEY) missing.push('PINECONE_API_KEY');
+  if (!process.env.PINECONE_INDEX_NAME) missing.push('PINECONE_INDEX_NAME');
+
+  if (missing.length > 0) {
+    const errorMsg = `Missing environment variable(s): ${missing.join(', ')}. Please set them in Vercel project settings or .env file.`;
+    console.error('❌ ' + errorMsg);
+    if (res) {
+      res.status(500).json({ error: errorMsg });
+    }
+    return false;
+  }
+  return true;
 }
-if (!process.env.PINECONE_API_KEY) {
-  console.error('❌  Missing PINECONE_API_KEY in .env');
-  process.exit(1);
-}
-if (!process.env.PINECONE_INDEX_NAME) {
-  console.error('❌  Missing PINECONE_INDEX_NAME in .env');
-  process.exit(1);
-}
+
+// Log warning on boot if env vars are missing
+checkEnvVars();
 
 const app = express();
 app.use(cors());
@@ -60,20 +67,26 @@ const upload = multer({
   },
 });
 
-// ── Shared clients ───────────────────────────────────────────────────────────
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-});
+// ── Service getters (lazy initialization to avoid crash when env vars missing) ─────────
+function getOpenAI() {
+  return new OpenAI({
+    apiKey: process.env.OPENROUTER_API_KEY,
+    baseURL: 'https://openrouter.ai/api/v1',
+  });
+}
 
-const embeddings = new OpenAIEmbeddings({
-  openAIApiKey: process.env.OPENROUTER_API_KEY,
-  model: 'text-embedding-3-small',
-  configuration: { baseURL: 'https://openrouter.ai/api/v1' },
-});
+function getEmbeddings() {
+  return new OpenAIEmbeddings({
+    openAIApiKey: process.env.OPENROUTER_API_KEY,
+    model: 'text-embedding-3-small',
+    configuration: { baseURL: 'https://openrouter.ai/api/v1' },
+  });
+}
 
-const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-const pineconeIndex = pinecone.Index(process.env.PINECONE_INDEX_NAME);
+function getPineconeIndex() {
+  const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+  return pinecone.Index(process.env.PINECONE_INDEX_NAME);
+}
 
 // ── State ────────────────────────────────────────────────────────────────────
 // sessions stores CLEAN conversation history (no context blobs).
@@ -91,7 +104,9 @@ let docState = {
 // ── Check if there's already data in Pinecone from a previous run ───────────
 async function ensureDocState() {
   if (docState.indexed || docState.indexing) return docState;
+  if (!process.env.PINECONE_API_KEY || !process.env.PINECONE_INDEX_NAME) return docState;
   try {
+    const pineconeIndex = getPineconeIndex();
     const stats = await pineconeIndex.describeIndexStats();
     const totalVectors = stats.totalRecordCount || 0;
     if (totalVectors > 0) {
@@ -99,18 +114,18 @@ async function ensureDocState() {
       docState.chunks = totalVectors;
       docState.filename = docState.filename || 'Previous document';
     }
-  } catch { /* ignore connection errors */ }
+  } catch (err) {
+    console.warn('⚠️ Could not check Pinecone index stats:', err.message);
+  }
   return docState;
 }
 
-ensureDocState();
+ensureDocState().catch(() => {});
 
 // ── Helper: safely delete all vectors (handles 404 on empty index) ───────────
-// PineconeNotFoundError is thrown when deleteAll() is called on an empty
-// serverless index. Its .status property is undefined (not the number 404),
-// so we must check .name rather than .status to identify and suppress it.
 async function safeDeleteAll() {
   try {
+    const pineconeIndex = getPineconeIndex();
     await pineconeIndex.deleteAll();
   } catch (err) {
     // Swallow "not found" — means the index is already empty, which is fine.
@@ -122,6 +137,7 @@ async function safeDeleteAll() {
 
 // ── Upload & Index endpoint ──────────────────────────────────────────────────
 app.post('/api/upload', upload.single('pdf'), async (req, res) => {
+  if (!checkEnvVars(res)) return;
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   if (docState.indexing) return res.status(409).json({ error: 'Indexing already in progress' });
 
@@ -155,6 +171,8 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
 
     // 4. Embed & store
     console.log('⏳  Uploading vectors to Pinecone...');
+    const embeddings = getEmbeddings();
+    const pineconeIndex = getPineconeIndex();
     await PineconeStore.fromDocuments(chunks, embeddings, {
       pineconeIndex,
       maxConcurrency: 5,
@@ -185,10 +203,13 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
 });
 
 // ── Document status ──────────────────────────────────────────────────────────
-app.get('/api/status', async (_, res) => res.json(await ensureDocState()));
+app.get('/api/status', async (req, res) => {
+  res.json(await ensureDocState());
+});
 
 // ── Clear document ───────────────────────────────────────────────────────────
-app.post('/api/clear', async (_, res) => {
+app.post('/api/clear', async (req, res) => {
+  if (!checkEnvVars(res)) return;
   if (docState.indexing) return res.status(409).json({ error: 'Indexing in progress, please wait' });
   try {
     await safeDeleteAll();
@@ -204,6 +225,7 @@ app.post('/api/clear', async (_, res) => {
 
 // ── Chat endpoint ────────────────────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
+  if (!checkEnvVars(res)) return;
   const { question, sessionId } = req.body;
   if (!question?.trim()) return res.status(400).json({ error: 'No question provided' });
 
@@ -224,6 +246,10 @@ Keep your answers clear, concise, and educational.`,
   }
 
   try {
+    const embeddings = getEmbeddings();
+    const pineconeIndex = getPineconeIndex();
+    const openai = getOpenAI();
+
     // 1. Embed the question and retrieve context
     const queryVector = await embeddings.embedQuery(question);
     const searchResults = await pineconeIndex.query({
@@ -280,12 +306,21 @@ Keep your answers clear, concise, and educational.`,
 });
 
 // ── Health ────────────────────────────────────────────────────────────────────
-app.get('/api/health', (_, res) => res.json({ status: 'ok', index: process.env.PINECONE_INDEX_NAME }));
+app.get('/api/health', (_, res) => {
+  const isEnvConfigured = Boolean(process.env.OPENROUTER_API_KEY && process.env.PINECONE_API_KEY && process.env.PINECONE_INDEX_NAME);
+  res.json({
+    status: isEnvConfigured ? 'ok' : 'misconfigured',
+    index: process.env.PINECONE_INDEX_NAME || null,
+    envConfigured: isEnvConfigured
+  });
+});
 
 // ── Fallback route (serves index.html for root and SPA routes) ───────────────
-app.get('/{*splat}', (req, res) => {
+app.use((req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
 });
+
+
 
 // ── Global error handler ───────────────────────────────────────────────────
 
@@ -306,3 +341,4 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
