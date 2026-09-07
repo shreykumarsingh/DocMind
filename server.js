@@ -315,22 +315,26 @@ app.get('/api/health', (_, res) => {
   });
 });
 
-// ── Fallback route (serves index.html for root and SPA routes) ───────────────
-app.use((req, res) => {
-  res.sendFile(join(__dirname, 'public', 'index.html'));
-});
-
-
-
 // ── Global error handler ───────────────────────────────────────────────────
-
-// Express 5 bubbles middleware errors (e.g. Multer fileFilter rejections)
-// to this 4-argument error handler. Without it they render as raw HTML stacks.
+// IMPORTANT: This MUST be registered BEFORE the catch-all fallback below,
+// otherwise Express error-forwarding (e.g. Multer fileFilter rejections)
+// gets swallowed by the catch-all and serves index.html instead of JSON.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error('❌  Unhandled error:', err.message);
   const status = err.status || err.statusCode || 500;
   res.status(status).json({ error: err.message || 'Internal server error' });
+});
+
+// ── API 404 guard ────────────────────────────────────────────────────────────
+// Unknown /api/* routes should return JSON 404, not the HTML page.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
+// ── Fallback route (serves index.html for root and SPA routes) ───────────────
+app.use((req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 
 if (!process.env.VERCEL) {
@@ -341,4 +345,3 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
-
