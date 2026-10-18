@@ -1,98 +1,22 @@
-// ── Promise.withResolvers polyfill (required for pdfjs-dist on Node < v22) ──
-if (typeof Promise.withResolvers === 'undefined') {
-  Promise.withResolvers = function () {
-    let resolve, reject;
-    const promise = new Promise((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    return { promise, resolve, reject };
-  };
-}
+// Index a file into Pinecone: npm run index [-- path/to/file.pdf|.docx|.txt|.csv]
+import { existsSync, readFileSync } from 'fs';
+import { basename } from 'path';
+import { requireEnv, indexFile } from './rag.js';
 
-import * as dotenv from 'dotenv';
-dotenv.config();
+requireEnv();
 
-import { existsSync } from 'fs';
-import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf';
-import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { Pinecone } from '@pinecone-database/pinecone';
-import { PineconeStore } from '@langchain/pinecone';
-
-// ── Startup checks ──────────────────────────────────────────────────────────
-if (!process.env.OPENROUTER_API_KEY) {
-  console.error('❌  Missing OPENROUTER_API_KEY in .env');
-  process.exit(1);
-}
-if (!process.env.PINECONE_API_KEY) {
-  console.error('❌  Missing PINECONE_API_KEY in .env');
-  process.exit(1);
-}
-if (!process.env.PINECONE_INDEX_NAME) {
-  console.error('❌  Missing PINECONE_INDEX_NAME in .env');
+const file = process.argv[2] || './result.pdf';
+if (!existsSync(file)) {
+  console.error(`❌  File not found: ${file}`);
   process.exit(1);
 }
 
-async function indexDocument() {
-  try {
-    // 1. Load PDF
-    const PDF_PATH = './result.pdf';
-
-    // Guard: verify the PDF exists before trying to load it
-    if (!existsSync(PDF_PATH)) {
-      console.error(`❌  PDF file not found at path: ${PDF_PATH}`);
-      console.error('    Place a valid PDF file named "result.pdf" in the "ai service" directory.');
-      process.exit(1);
-    }
-
-    const pdfLoader = new PDFLoader(PDF_PATH);
-    const rawDocs = await pdfLoader.load();
-    console.log(`✅  PDF loaded  (${rawDocs.length} pages)`);
-
-    // 2. Split into chunks
-    const textSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1000,
-      chunkOverlap: 200,
-    });
-    const chunkedDocs = await textSplitter.splitDocuments(rawDocs);
-    console.log(`✅  Chunking completed  (${chunkedDocs.length} chunks)`);
-
-    // 3. Embeddings via OpenRouter
-    const embeddings = new OpenAIEmbeddings({
-      openAIApiKey: process.env.OPENROUTER_API_KEY,
-      model: 'text-embedding-3-small',
-      configuration: {
-        baseURL: 'https://openrouter.ai/api/v1',
-      },
-    });
-    console.log('✅  Embedding model configured');
-
-    // 4. Pinecone setup
-    const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-    const pineconeIndex = pinecone.Index(process.env.PINECONE_INDEX_NAME);
-    console.log('✅  Pinecone configured');
-
-    // 5. Store vectors
-    console.log('⏳  Uploading vectors to Pinecone...');
-    await PineconeStore.fromDocuments(chunkedDocs, embeddings, {
-      pineconeIndex,
-      maxConcurrency: 5,
-    });
-
-    console.log('🎉  Data stored successfully in Pinecone!');
-  } catch (err) {
-    if (err.status === 401) {
-      console.error('❌  Authentication failed — your OPENROUTER_API_KEY is invalid or expired.');
-      console.error('    Get a new key at: https://openrouter.ai/keys');
-    } else if (err.status === 404) {
-      console.error(`❌  Pinecone index "${process.env.PINECONE_INDEX_NAME}" not found.`);
-      console.error('    Create it at: https://app.pinecone.io');
-    } else {
-      console.error('❌  Error:', err.message || err);
-    }
-    process.exit(1);
-  }
+try {
+  console.log(`⏳  Indexing ${file}...`);
+  const doc = await indexFile(readFileSync(file), basename(file));
+  console.log(`🎉  Indexed "${doc.filename}" — ${doc.chunks} chunk${doc.chunks === 1 ? '' : 's'} (id ${doc.id})`);
+} catch (err) {
+  if (err.status === 401) console.error('❌  OPENROUTER_API_KEY is invalid or expired. Get a new key at https://openrouter.ai/keys');
+  else console.error('❌  Error:', err.message || err);
+  process.exit(1);
 }
-
-indexDocument();

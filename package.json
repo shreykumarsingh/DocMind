@@ -4,13 +4,14 @@
   "type": "module",
   "main": "index.js",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "start": "node server.js",
     "index": "node index.js",
     "query": "node query.js",
-    "delete": "node deleteAll.js"
+    "delete": "node deleteAll.js",
+    "test": "node test.js"
   },
   "dependencies": {
     "@langchain/community": "^1.1.24",
@@ -20,11 +21,15 @@
     "@langchain/textsplitters": "^1.0.1",
     "@pinecone-database/pinecone": "^5.1.2",
     "cors": "^2.8.6",
+    "d3-dsv": "^2.0.0",
     "dotenv": "16.6.1",
     "express": "^5.2.1",
+    "mammoth": "^1.13.0",
     "multer": "^2.3.0",
     "openai": "^6.32.0",
-    "pdf-parse": "1.1.1",
-    "readline-sync": "^1.4.10"
+    "pdf-parse": "1.1.1"
+  },
+  "devDependencies": {
+    "jszip": "^3.10.2"
   }
 }
